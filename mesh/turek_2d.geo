@@ -1,7 +1,7 @@
 DefineConstant[
 jets_toggle = {1, Name "Toggle Jets --> 0 : No jets, 1: Yes jets"}
 height_cylinder = {1, Name "Cylinder Height (ND)"}
-ar = {1.0, Name "Cylinder Aspect Ratio"}
+ar = {0.5, Name "Cylinder Aspect Ratio"}
 cylinder_y_shift = {0.0, Name "Cylinder Center Shift from Centerline, Positive UP (ND)"}
 x_upstream = {10, Name "Domain Upstream Length (from left-most rect point) (ND)"}
 x_downstream = {26, Name "Domain Downstream Length (from right-most rect point) (ND)"}
@@ -26,7 +26,7 @@ arm_thickness = 0.15; // the thickness of each V arm
 jet_interval = 0.01; // interval between jet and rear edge
 
 // V-shape geometry: 60 degree opening angle, tip pointing upstream
-v_angle = 30 * Pi / 180; // Half angle in radians (30 degrees, total 60 degrees)
+v_angle = 70 * Pi / 180; // Half angle in radians (30 degrees, total 60 degrees)
 
 // Define key x coordinates
 x_tip = -r_length/2;  // Front tip (most upstream point)
@@ -45,12 +45,12 @@ y_rear_bot_inner = y_rear_bot_outer + thickness_offset_y;
 
 // Jet positioning on rear outer edges
 // Jets are positioned on the rear slanted edges
-x_jet_start = x_rear - (jet_width + jet_interval) * Cos(v_angle);  // Jet upstream bound x
-x_jet_end = x_rear - jet_interval * Cos(v_angle);
-y_jet_top_start = y_rear_top_outer - (jet_width + jet_interval) * Sin(v_angle);  // Top jet upstream y
-y_jet_bot_start = y_rear_bot_outer + (jet_width + jet_interval) * Sin(v_angle);  // Bottom jet upstream y
-y_jet_top_end = y_rear_top_outer - jet_interval * Sin(v_angle);
-y_jet_bot_end = y_rear_bot_outer + jet_interval * Sin(v_angle);
+x_jet_start = x_rear_inner - (jet_width + jet_interval) * Cos(v_angle);  // Jet upstream bound x
+x_jet_end = x_rear_inner - jet_interval * Cos(v_angle);
+y_jet_top_start = y_rear_top_inner - (jet_width + jet_interval) * Sin(v_angle);  // Top jet upstream y
+y_jet_bot_start = y_rear_bot_inner + (jet_width + jet_interval) * Sin(v_angle);  // Bottom jet upstream y
+y_jet_top_end = y_rear_top_inner - jet_interval * Sin(v_angle);
+y_jet_bot_end = y_rear_bot_inner + jet_interval * Sin(v_angle);
 
 
 
@@ -62,74 +62,80 @@ y_jet_bot_centre = (y_jet_bot_start + y_jet_bot_end) / 2;
 // Define all points of V-shape (defined in CCW sense)
 p = newp;
 Point(p) = {x_tip, 0, 0, mesh_size_cylinder};  // Front tip outer
-Point(p+1) = {x_jet_start, y_jet_top_start, 0, mesh_size_jets};  // Top jet upstream bound
-Point(p+2) = {x_jet_centre, y_jet_top_centre, 0, mesh_size_jets};  // Top jet centre
+Point(p+1) = {x_rear, y_rear_top_outer, 0, mesh_size_cylinder};  // Top rear corner outer
+Point(p+2) = {x_rear_inner, y_rear_top_inner, 0, mesh_size_cylinder};  // Top rear corner inner
+Point(p+5) = {x_jet_start, y_jet_top_start, 0, mesh_size_jets};  // Top jet upstream bound
+Point(p+4) = {x_jet_centre, y_jet_top_centre, 0, mesh_size_jets};  // Top jet centre
 Point(p+3) = {x_jet_end, y_jet_top_end, 0, mesh_size_jets};  // Top jet downstream bound
-Point(p+4) = {x_rear, y_rear_top_outer, 0, mesh_size_cylinder};  // Top rear corner outer
-Point(p+5) = {x_rear_inner, y_rear_top_inner, 0, mesh_size_cylinder};  // Top rear corner inner
 Point(p+6) = {x_tip_inner, 0, 0, mesh_size_cylinder};  // Front tip inner
-Point(p+7) = {x_rear_inner, y_rear_bot_inner, 0, mesh_size_cylinder};  // Bottom rear corner inner
-Point(p+8) = {x_rear, y_rear_bot_outer, 0, mesh_size_cylinder};  // Bottom rear corner outer
 Point(p+9) = {x_jet_end, y_jet_bot_end, 0, mesh_size_jets};  // Bottom jet downstream bound
-Point(p+10) = {x_jet_centre, y_jet_bot_centre, 0, mesh_size_jets};  // Bottom jet centre
-Point(p+11) = {x_jet_start, y_jet_bot_start, 0, mesh_size_jets};  // Bottom jet upstream bound
+Point(p+8) = {x_jet_centre, y_jet_bot_centre, 0, mesh_size_jets};  // Bottom jet centre
+Point(p+7) = {x_jet_start, y_jet_bot_start, 0, mesh_size_jets};  // Bottom jet upstream bound
+Point(p+10) = {x_rear_inner, y_rear_bot_inner, 0, mesh_size_cylinder};  // Bottom rear corner inner
+Point(p+11) = {x_rear, y_rear_bot_outer, 0, mesh_size_cylinder};  // Bottom rear corner outer
 
 If(jets_toggle)
 
   cylinder[] = {}; // Create empty list of curves (surfaces) of the V-shape body. Defined CCW
   no_slip_cyl[] = {};  // No-slip V-shape physical surfaces list
 
-  // Define top no-slip surface (from tip to jet start)
+  // Define top outer edge (from tip to top rear outer corner)
   l = newl;
   Line(l) = {p, p+1};
   no_slip_cyl[] += {l};
   cylinder[] += {l};
 
-  // Define top jet surface (on rear slanted edge)
+  // Define top rear edge (from outer to inner)
   l = newl;
   Line(l) = {p+1, p+2};
-  Line(l+1) = {p+2, p+3};
+  no_slip_cyl[] += {l};
+  cylinder[] += {l};
+
+  // Define top inner edge (from rear inner to jet start)
+  l = newl;
+  Line(l) = {p+2, p+3};
+  no_slip_cyl[] += {l};
+  cylinder[] += {l};
+
+  // Define top jet surface
+  l = newl;
+  Line(l) = {p+3, p+4};
+  Line(l+1) = {p+4, p+5};
   Physical Line(5) = {l, l+1};  // Top jet physical surface
   cylinder[] += {l, l+1}; // Add to V-shape list
 
-
-  // Define rear edge no-slip surface (connecting jet end to rear corner)
-  l = newl;
-  Line(l) = {p+3, p+4};
-  no_slip_cyl[] += {l};
-  cylinder[] += {l};
-
-  // Define rear vertical edge 
-  l = newl;
-  Line(l) = {p+4, p+5};
-  no_slip_cyl[] += {l};
-  cylinder[] += {l};
-
+  // Define inner edge (from top jet end to front tip inner)
   l = newl;
   Line(l) = {p+5, p+6};
   no_slip_cyl[] += {l};
   cylinder[] += {l};
 
+  // Define inner edge (from front tip inner to bottom jet start)
   l = newl;
   Line(l) = {p+6, p+7};
   no_slip_cyl[] += {l};
   cylinder[] += {l};
 
+  // Define bottom jet surface
   l = newl;
   Line(l) = {p+7, p+8};
+  Line(l+1) = {p+8, p+9};
+  Physical Line(6) = {l, l+1};  // Bottom jet physical surface
+  cylinder[] += {l, l+1}; // Add to V-shape list
+
+  // Define bottom inner edge (from jet end to rear inner)
+  l = newl;
+  Line(l) = {p+9, p+10};
   no_slip_cyl[] += {l};
   cylinder[] += {l};
 
-
-  // Define bottom jet surface (on rear slanted edge)
+  // Define bottom rear edge (from inner to outer)
   l = newl;
-  Line(l) = {p+8, p+9};
-  Line(l+1) = {p+9, p+10};
-  Line(l+2) = {p+10, p+11};
-  Physical Line(6) = {l, l+1, l+2};  // Bottom jet physical surface
-  cylinder[] += {l, l+1, l+2}; // Add to V-shape list
+  Line(l) = {p+10, p+11};
+  no_slip_cyl[] += {l};
+  cylinder[] += {l};
 
-  // Define bottom no-slip surface (from jet end to tip)
+  // Define bottom outer edge (from rear outer to tip, closing the loop)
   l = newl;
   Line(l) = {p+11, p};
   no_slip_cyl[] += {l};
