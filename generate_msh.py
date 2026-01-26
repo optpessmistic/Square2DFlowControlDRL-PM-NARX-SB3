@@ -9,7 +9,7 @@ def generate_mesh(args, template='geometry_2d.template_geo', dim=2):
     assert os.path.exists(template)  # Raise an error if no template
     args = args.copy()  # Create a copy of the dict as we will be popping pairs
 
-    with open(template, 'r') as f: old = f.readlines()  # Read template and save each line as an item of the list 'old''
+    with open(template, 'r', encoding='utf-8') as f: old = f.readlines()  # Read template and save each line as an item of the list 'old''
 
     # Lambda defines an anonymous function --> lambda arguments : expression
     # .startswith() method returns True if a string starts with the specified prefix
@@ -26,7 +26,7 @@ def generate_mesh(args, template='geometry_2d.template_geo', dim=2):
         output = template
     assert os.path.splitext(output)[1] == '.geo'  # raise error if output doesnt have .geo extension
 
-    with open(output, 'w') as f: f.write(body)  # write body to target ('output') .geo file
+    with open(output, 'w', encoding='utf-8') as f: f.write(body)  # write body to target ('output') .geo file
 
     scale = args.pop('clscale')  # Get mesh size scaling ratio
 

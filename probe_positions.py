@@ -32,6 +32,8 @@ def probe_positions(probe_distribution, geometry_params):
     ar = geometry_params['ar']
     length_cylinder = ar * height_cylinder
     jet_width = geometry_params['jet_width']
+    arm_thickness = geometry_params['arm_thickness']
+    v_angle = geometry_params['v_angle']
 
 
     list_position_probes = []  # Initialise list of (x,y) np arrays with positions coordinate pairs
@@ -136,11 +138,101 @@ def probe_positions(probe_distribution, geometry_params):
                     list_position_probes.append(np.array([crrt_x, crrt_y]))  # Append (x,y) pairs np array
 
         elif distribution_type == 'base':
-
-            positions_probes_for_grid_x = length_cylinder / 2
-            positions_probes_for_grid_y = [-height_cylinder/2 + (height_cylinder/(n_base+1)) * i for i in range(1,n_base+1)]
+            # V-shape outer rear edge: x = x_rear, y spans from y_rear_bot_outer to y_rear_top_outer
+            x_tip = -length_cylinder / 2
+            x_rear = length_cylinder / 2
+            y_rear_top_outer = (x_rear - x_tip) * np.tan(v_angle)  # Top outer corner y
+            y_rear_bot_outer = -y_rear_top_outer  # Bottom outer corner y
+            
+            positions_probes_for_grid_x = x_rear + arm_thickness * np.sin(v_angle)
+            positions_probes_for_grid_y = [y_rear_bot_outer + (2 * y_rear_top_outer / (n_base + 1)) * i for i in range(1, n_base + 1)]
 
             for crrt_y in positions_probes_for_grid_y:
-                list_position_probes.append(np.array([positions_probes_for_grid_x, crrt_y]))  # Append (x,y) pairs np array
+                list_position_probes.append(np.array([positions_probes_for_grid_x, crrt_y]))
+
+        elif distribution_type == 'inner_v':
+            # Probes along V-shape inner slanted edges, only where x > 0
+            x_tip = -length_cylinder / 2
+            x_rear = length_cylinder / 2
+            
+            # Inner corner positions
+            thickness_offset_x = arm_thickness * np.sin(v_angle)
+            thickness_offset_y = arm_thickness * np.cos(v_angle)
+            x_rear_inner = x_rear + thickness_offset_x
+            y_rear_top_outer = (x_rear - x_tip) * np.tan(v_angle)
+            y_rear_bot_outer = -y_rear_top_outer
+            y_rear_top_inner = y_rear_top_outer - thickness_offset_y
+            y_rear_bot_inner = y_rear_bot_outer + thickness_offset_y
+            x_tip_inner = x_tip + arm_thickness / np.sin(v_angle)
+            
+            # Only distribute probes where x > 0
+            # Calculate the point on inner edge where x = 0
+            # Top edge: line from (x_tip_inner, 0) to (x_rear_inner, y_rear_top_inner)
+            # At x = 0: t = (0 - x_tip_inner) / (x_rear_inner - x_tip_inner)
+            t_start = max(0, (0 - x_tip_inner) / (x_rear_inner - x_tip_inner))
+            
+            # Half probes on top edge (x > 0), half on bottom edge (x > 0)
+            n_per_side = n_base // 2
+            
+            # Top inner edge: from x=0 point to (x_rear_inner, y_rear_top_inner)
+            for i in range(1, n_per_side + 1):
+                t = t_start + (1 - t_start) * i / (n_per_side + 1)
+                x_probe = x_tip_inner + t * (x_rear_inner - x_tip_inner)
+                y_probe = t * y_rear_top_inner
+                list_position_probes.append(np.array([x_probe, y_probe]))
+            
+            # Bottom inner edge: from x=0 point to (x_rear_inner, y_rear_bot_inner)
+            for i in range(1, n_per_side + 1):
+                t = t_start + (1 - t_start) * i / (n_per_side + 1)
+                x_probe = x_tip_inner + t * (x_rear_inner - x_tip_inner)
+                y_probe = t * y_rear_bot_inner
+                list_position_probes.append(np.array([x_probe, y_probe]))
+                
+        elif distribution_type == 'v_BackFull':
+            # V-shape wake distribution: 24 probes on each wing wake + 16 in center
+            x_tip = -length_cylinder / 2
+            x_rear = length_cylinder / 2
+            
+            # Outer corner positions
+            y_rear_top_outer = (x_rear - x_tip) * np.tan(v_angle)
+            y_rear_bot_outer = -y_rear_top_outer
+            
+            # Inner corner positions  
+            thickness_offset_x = arm_thickness * np.sin(v_angle)
+            thickness_offset_y = arm_thickness * np.cos(v_angle)
+            x_rear_inner = x_rear + thickness_offset_x
+            y_rear_top_inner = y_rear_top_outer - thickness_offset_y
+            y_rear_bot_inner = y_rear_bot_outer + thickness_offset_y
+            
+            # === Top wing wake: 24 probes (6 columns x 4 rows) ===
+            # x: from x_rear_inner + 0.25 to x_rear_inner + 2.0
+            # y: from y_rear_top_inner to beyond y_rear_top_outer (extended outward by 200%)
+            top_x_offsets = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0]
+            y_top_extend = y_rear_top_outer + 2 * (y_rear_top_outer - y_rear_top_inner)  # Extend 200% beyond outer
+            top_y_positions = [y_rear_top_inner + (y_top_extend - y_rear_top_inner) * (i + 1) / 5 for i in range(4)]
+            
+            for x_off in top_x_offsets:
+                for y_pos in top_y_positions:
+                    list_position_probes.append(np.array([x_rear_inner + x_off, y_pos]))
+            
+            # === Bottom wing wake: 24 probes (6 columns x 4 rows) ===
+            # y: from beyond y_rear_bot_outer to y_rear_bot_inner (extended outward by 200%)
+            y_bot_extend = y_rear_bot_outer - 2 * (y_rear_bot_inner - y_rear_bot_outer)  # Extend 200% beyond outer
+            bot_y_positions = [y_bot_extend + (y_rear_bot_inner - y_bot_extend) * (i + 1) / 5 for i in range(4)]
+            
+            for x_off in top_x_offsets:
+                for y_pos in bot_y_positions:
+                    list_position_probes.append(np.array([x_rear_inner + x_off, y_pos]))
+            
+            # === Center wake: 16 probes (4 columns x 4 rows) ===
+            # x: from x_rear_inner + 0.25 to x_rear_inner + 1.5
+            # y: centered around 0, between inner edges
+            center_x_offsets = [0.25, 0.5, 1.0, 1.5]
+            center_y_positions = [y_rear_bot_inner * 0.75, y_rear_bot_inner * 0.25, 
+                                  y_rear_top_inner * 0.25, y_rear_top_inner * 0.75]
+            
+            for x_off in center_x_offsets:
+                for y_pos in center_y_positions:
+                    list_position_probes.append(np.array([x_rear_inner + x_off, y_pos]))
 
     return list_position_probes,list_position_probes_ob

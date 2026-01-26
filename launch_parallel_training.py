@@ -143,7 +143,7 @@ if __name__ == '__main__':
     config["ent_coef"] = "auto_0.01"
     config["target_entropy"] = "auto"
     device = "cuda" # "cpu" if run the training on cpu
-    policy_kwargs = dict(net_arch=dict(pi=[512,512,512], qf=[512,512,512]))
+    policy_kwargs = dict(net_arch=dict(pi=[256,256], qf=[256,256]))
     checkpoint_callback = CheckpointCallback(
                                             save_freq=max(200, 1),
                                             #save_env_stats=True,
@@ -155,7 +155,9 @@ if __name__ == '__main__':
     # 创建速度监控回调，每1000步检查一次
     speed_monitor = SpeedMonitorCallback(check_freq=1000, log_dir=os.path.join(savedir, 'logs'), verbose=1)
 
-    env = SubprocVecEnv([resume_env(plot=False, dump_CL=False, dump_debug=10, n_env=i) for i in range(number_servers)],start_method='spawn')
+    # 注意：在子进程中禁用 plot 以避免 matplotlib GUI 问题
+    # 禁用 random_start 以避免数值发散
+    env = SubprocVecEnv([resume_env(plot=False, dump_CL=False, dump_debug=10, n_env=i, random_start=False) for i in range(number_servers)],start_method='spawn')
     
     # Deactivate this if not use history observations
     env = VecFrameStack(env, n_stack=27)
@@ -165,11 +167,11 @@ if __name__ == '__main__':
     # 引入 VecCheckNan 并包裹环境
     # 作用：一旦环境返回 NaN 或无穷大，程序会立即报错并打印出是哪个环境、哪一步出的错
     from stable_baselines3.common.vec_env import VecCheckNan
-   # env = VecCheckNan(env, raise_exception=True)
+    env = VecCheckNan(env, raise_exception=True)
     # =============== 修改结束 ===============
 
     # Replace 'TQC' by 'SAC' if want to use SAC
-    model = TQC('MlpPolicy', env, policy_kwargs=policy_kwargs, tensorboard_log=savedir, device=device, **config)
+    model = SAC('MlpPolicy', env, policy_kwargs=policy_kwargs, tensorboard_log=savedir, device=device, **config)
 
     print(f"\n开始训练...", flush=True)
     print(f"并行环境数: {number_servers}", flush=True)

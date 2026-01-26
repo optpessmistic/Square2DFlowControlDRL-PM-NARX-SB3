@@ -71,6 +71,7 @@ class Env2DCylinderModified(gym.Env):
 
         self.observation = None
         self.thread = None
+        self.just_finished_warmup = False  # 标志：预热刚完成，跳过首次 reset 的 FlowSolver 重建
 
         self.path_root = path_root
         self.flow_params = flow_params
@@ -192,6 +193,7 @@ class Env2DCylinderModified(gym.Env):
         # Remesh if necessary
         h5_file = '.'.join([self.path_root, 'h5'])  # mesh/turek_2d.h5
         msh_file = '.'.join([self.path_root, 'msh'])  # mesh/turek_2d.msh
+        self.mesh_dir = os.path.dirname(self.path_root)  # 获取 mesh 目录路径
         self.geometry_params['mesh'] = h5_file
 
         # Regenerate mesh?
@@ -220,15 +222,20 @@ class Env2DCylinderModified(gym.Env):
             if self.verbose > 0:
                 print("Load initial flow state")
 
-            # Load initial fields
-            self.flow_params['u_init'] = 'mesh/u_init.xdmf'
-            self.flow_params['p_init'] = 'mesh/p_init.xdmf'
+            # Load initial fields (使用正确的路径)
+            self.flow_params['u_init'] = os.path.join(self.mesh_dir, 'u_init.xdmf')
+            self.flow_params['p_init'] = os.path.join(self.mesh_dir, 'p_init.xdmf')
+            
+            # 调试信息
+            #print(f"DEBUG: mesh_dir = {self.mesh_dir}")
+            #print(f"DEBUG: u_init path = {self.flow_params['u_init']}")
+            #print(f"DEBUG: u_init exists = {os.path.exists(self.flow_params['u_init'])}")
 
             if self.verbose > 0:
                 print("Load buffer history")
 
-            # Load ring buffers
-            with open('mesh/dict_history_parameters.pkl', 'rb') as f:
+            # Load ring buffers (使用正确的路径)
+            with open(os.path.join(self.mesh_dir, 'dict_history_parameters.pkl'), 'rb') as f:
                 self.history_parameters = pickle.load(f)
 
             # Check everything is good to go
@@ -327,13 +334,22 @@ class Env2DCylinderModified(gym.Env):
             mesh = convert(msh_file, h5_file)
             comm = mesh.mpi_comm()
 
-            # save field data
-            XDMFFile(comm, 'mesh/u_init.xdmf').write_checkpoint(self.u_, 'u0', 0, encoding)
-            XDMFFile(comm, 'mesh/p_init.xdmf').write_checkpoint(self.p_, 'p0', 0, encoding)
+            # save field data (使用正确的路径)
+            XDMFFile(comm, os.path.join(self.mesh_dir, 'u_init.xdmf')).write_checkpoint(self.u_, 'u0', 0, encoding)
+            XDMFFile(comm, os.path.join(self.mesh_dir, 'p_init.xdmf')).write_checkpoint(self.p_, 'p0', 0, encoding)
 
             # save buffer dict
-            with open('mesh/dict_history_parameters.pkl', 'wb') as f:
+            with open(os.path.join(self.mesh_dir, 'dict_history_parameters.pkl'), 'wb') as f:
                 pickle.dump(self.history_parameters, f, pickle.HIGHEST_PROTOCOL)
+
+            # 预热完成后，禁用 remesh，后续 reset() 将直接加载保存的流场
+            self.geometry_params['remesh'] = False
+            self.n_iter_make_ready = None
+            # 设置 flow_params 以便后续从文件加载
+            self.flow_params['u_init'] = os.path.join(self.mesh_dir, 'u_init.xdmf')
+            self.flow_params['p_init'] = os.path.join(self.mesh_dir, 'p_init.xdmf')
+            self.just_finished_warmup = True  # 标志：跳过下一次 reset 的 FlowSolver 重建
+            print("预热完成，后续 reset() 将从保存的流场加载")
 
         # ----------------------------------------------------------------------
         # if reading from disk (no remesh), show to check everything ok
@@ -804,7 +820,20 @@ class Env2DCylinderModified(gym.Env):
             self.show_drag()
             self.show_control()
 
-        self.start_class()
+        # 如果刚完成预热，跳过 FlowSolver 重建，直接复用当前状态
+        if self.just_finished_warmup:
+            self.just_finished_warmup = False
+            print("跳过 FlowSolver 重建，复用预热后的流场状态")
+            # 重置一些状态变量
+            self.solver_step = 0
+            self.accumulated_drag = 0
+            self.accumulated_lift = 0
+            self.episode_drags = np.array([])
+            self.episode_areas = np.array([])
+            self.episode_lifts = np.array([])
+            self.episode_reward = 0
+        else:
+            self.start_class()
 
         # If observations is based on difference of average top and bottom pressures
         if (self.output_params['single_input'] == True):

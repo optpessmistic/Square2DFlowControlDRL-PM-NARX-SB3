@@ -47,8 +47,13 @@ class FlowSolver(object):
         for path, func, name in zip(('u_init', 'p_init'), (u_n, p_n), ('u0', 'p0')):
             if path in flow_params:
                 comm = mesh.mpi_comm()
-
-                XDMFFile(comm, flow_params[path]).read_checkpoint(func, name, 0)
+                
+                # 使用 HDF5File 代替 XDMFFile.read_checkpoint（后者有 bug）
+                xdmf_path = flow_params[path]
+                h5_path = xdmf_path.replace('.xdmf', '.h5')
+                h5_dataset = name + '/' + name + '_0/vector'  # e.g., 'u0/u0_0/vector'
+                with HDF5File(comm, h5_path, 'r') as h5:
+                    h5.read(func, h5_dataset)
                 # assert func.vector().norm('l2') > 0
 
         u_, p_ = Function(V), Function(Q)  # Solve into these
@@ -94,18 +99,71 @@ class FlowSolver(object):
         # Now the expression for the jets
         # NOTE: they start with Q=0
         width = geometry_params['jet_width']
-        length_cylinder = geometry_params['height_cylinder'] * geometry_params['ar']
+        
+        # V 形几何参数 (必须与 turek_2d.geo 中的定义完全一致!)
+        v_angle = geometry_params.get('v_angle', 70 * math.pi / 180)  # 半角
+        scale_factor = geometry_params.get('scale_factor', 1.0 / (2.0 * math.tan(v_angle)))
+        
+        # 注意：这些参数在 .geo 文件中是直接硬编码的，没有乘以 scale_factor
+        # 所以这里也不应该乘以 scale_factor
+        arm_thickness = 0.064  # 必须与 turek_2d.geo 中的值完全一致
+        jet_interval = 0.01   # 必须与 turek_2d.geo 中的值完全一致
+        jet_width = width     # jet_width 在 .geo 中也未缩放
+        
+        # 计算射流中心位置 (与 turek_2d.geo 完全一致)
+        r_length = geometry_params['height_cylinder'] * geometry_params['ar'] * scale_factor
+        x_rear = r_length / 2
+        x_tip = -r_length / 2
+        y_rear_top_outer = (x_rear - x_tip) * math.tan(v_angle)  # = 0.5
+        
+        thickness_offset_x = arm_thickness * math.sin(v_angle)
+        thickness_offset_y = arm_thickness * math.cos(v_angle)
+        x_rear_inner = x_rear + thickness_offset_x
+        y_rear_top_inner = y_rear_top_outer - thickness_offset_y
+        y_rear_bot_inner = -y_rear_top_inner
+        
+        x_jet_centre = x_rear_inner - (jet_width / 2 + jet_interval) * math.cos(v_angle)
+        y_jet_top_centre = y_rear_top_inner - (jet_width / 2 + jet_interval) * math.sin(v_angle)
+        y_jet_bot_centre = -y_jet_top_centre
 
         bcu_jet = []
         jet_tags = list(range(cylinder_noslip_tag + 1, cylinder_noslip_tag + 1 + 2))  # 5 and 6 for 2 jets
 
-        jets = [Expression(('0', '-(3/2) * (Q/width) * (1 - pow((2 * x[0] - length_cylinder + width) / width, 2))'),  # top jet
-                           width=width, length_cylinder=length_cylinder, Q=0, degree=1),
-                Expression(('0', '(3/2) * (Q/width) * (1 - pow((2 * x[0] - length_cylinder + width) / width, 2))'),  # bot jet
-                           width=width, length_cylinder=length_cylinder, Q=0, degree=1)]
-        # If this doesnt work, maybe it has to do with how dolfin define the origin for Expressions
-        # Maybe try x[1] <= 0 ? - : +
+        theta = v_angle
+        
+        # 法向量分量 (指向流场内部)
+        # 顶部射流法向量 (指向右下): nx = sin(theta), ny = -cos(theta)
+        # 底部射流法向量 (指向右上): nx = sin(theta), ny = cos(theta)
+        nx = math.sin(theta)
+        ny = math.cos(theta)
 
+        # 对于 V 形斜边上的射流，使用沿斜边的局部坐标
+        # s = 沿斜边的距离 (从射流中心测量)
+        # 对于顶部斜边: s = (x - x_jet_centre) * cos(theta) + (y - y_jet_centre) * sin(theta)
+        # 对于底部斜边: s = (x - x_jet_centre) * cos(theta) - (y - y_jet_centre) * sin(theta)
+        
+        # 抛物线分布: amplitude = (3/2) * (Q/width) * (1 - (2*s/width)^2)
+        # 速度方向沿法向量
+        
+        # 顶部射流表达式 (沿斜边的局部坐标)
+        top_jet_profile = f'''(3.0/2.0) * (Q/{jet_width}) * 
+            (1.0 - pow(2.0 * ({math.cos(theta)} * (x[0] - {x_jet_centre}) + {math.sin(theta)} * (x[1] - {y_jet_top_centre})) / {jet_width}, 2))'''
+        
+        # 底部射流表达式 (沿斜边的局部坐标)
+        bot_jet_profile = f'''(3.0/2.0) * (Q/{jet_width}) * 
+            (1.0 - pow(2.0 * ({math.cos(theta)} * (x[0] - {x_jet_centre}) + {-math.sin(theta)} * (x[1] - {y_jet_bot_centre})) / {jet_width}, 2))'''
+
+        jets = [
+            # Top jet (Tag 5): 方向 (nx, -ny)
+            Expression((f'{nx} * {top_jet_profile}', f'{-ny} * {top_jet_profile}'),
+                       Q=0, degree=2),
+            
+            # Bot jet (Tag 6): 方向 (nx, ny)
+            Expression((f'{nx} * {bot_jet_profile}', f'{ny} * {bot_jet_profile}'),
+                       Q=0, degree=2)
+        ]
+        
+        
         for tag, jet in zip(jet_tags, jets):
             bc = DirichletBC(V, jet, surfaces, tag)
             bcu_jet.append(bc)

@@ -51,6 +51,9 @@ def resume_env(plot=False,  # To plot results (Field, controls, lift, drag, rec 
                            'remesh': remesh,  # remesh toggle (from resume_env args)
                            'jets_toggle': 1,  # toggle Jets --> 0 : No jets, 1: Yes jets
                            'jet_width': 0.1,  # Jet Width
+                           'arm_thickness': 0.064, # geo arm thickness
+                           'scale_factor' : 1.0 / (2.0 * np.tan(70 * np.pi / 180)),
+                           'v_angle' : 70 * np.pi / 180,
                            'height_cylinder': 1,  # Cylinder Height
                            'ar': 1.0,  # Cylinder Aspect Ratio
                            'cylinder_y_shift': 0,  # Cylinder Center Shift from Centreline, Positive UP
@@ -73,7 +76,7 @@ def resume_env(plot=False,  # To plot results (Field, controls, lift, drag, rec 
         solver_params = {'dt': dt}
 
         # Define probes positions
-        probe_distribution = {'distribution_type': 'base', # Or 'inflow64' for probes in the wake
+        probe_distribution = {'distribution_type': 'inflow64', # Or 'inflow64' for probes in the wake
                               'probes_at_jets': False,
                               # Whether to use probes at jets or not, usually not in use
                               'n_base': 64}  # Number of probes at cylinder base if 'base' distribution is used
@@ -105,7 +108,7 @@ def resume_env(plot=False,  # To plot results (Field, controls, lift, drag, rec 
                              "range_pressure_plot": [-2.0, 1],  # ylim for pressure dynamic plot
                              "range_drag_plot": [-0.175, -0.13],  # ylim for drag dynamic plot
                              "range_lift_plot": [-0.2, +0.2],  # ylim for lift dynamic plot
-                             "line_drag": -0.7221,  # Mean drag without control
+                             "line_drag": -1.1345,  # Mean drag without control
                              "line_lift": 0,  # Mean lift without control
                              "show_all_at_reset": False,
                              "single_run": single_run,

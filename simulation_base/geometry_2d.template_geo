@@ -1,16 +1,16 @@
 DefineConstant[
 jets_toggle = {1, Name "Toggle Jets --> 0 : No jets, 1: Yes jets"}
 height_cylinder = {1, Name "Cylinder Height (ND)"}
-ar = {0.5, Name "Cylinder Aspect Ratio"}
+ar = {1.0, Name "Cylinder Aspect Ratio"}
 cylinder_y_shift = {0.0, Name "Cylinder Center Shift from Centerline, Positive UP (ND)"}
-x_upstream = {10, Name "Domain Upstream Length (from left-most rect point) (ND)"}
+x_upstream = {20, Name "Domain Upstream Length (from left-most rect point) (ND)"}
 x_downstream = {26, Name "Domain Downstream Length (from right-most rect point) (ND)"}
-height_domain = {20, Name "Domain Height (ND)"}
+height_domain = {25, Name "Domain Height (ND)"}
 coarse_y_distance_top_bot = {4, Name "y-distance from center where mesh coarsening starts"}
-coarse_x_distance_left_from_LE = {2, Name "x-distance from upstream face where mesh coarsening starts"}
+coarse_x_distance_left_from_LE = {2.5, Name "x-distance from upstream face where mesh coarsening starts"}
 mesh_size_cylinder = {0.05, Name "Mesh Size on Cylinder Walls"}
-mesh_size_jets = {0.01, Name "Mesh Size on jet suirfaces"}
-mesh_size_medium = {0.2, Name "Medium mesh size (at boundary where coarsening starts"}
+mesh_size_jets = {0.015, Name "Mesh Size on jet suirfaces"}
+mesh_size_medium = {0.45, Name "Medium mesh size (at boundary where coarsening starts"}
 mesh_size_coarse = {1, Name "Coarse mesh Size Close to Domain boundaries outside wake"}
 jet_width = {0.1, Name "Jet Width (ND)"}
 ];
@@ -19,22 +19,26 @@ jet_width = {0.1, Name "Jet Width (ND)"}
 center = newp;
 Point(center) = {0, 0, 0, mesh_size_cylinder};
 
-// V-shape dimensions
-r_height = height_cylinder; // V-shape characteristic height
-r_length = ar*height_cylinder; // V-shape length (from tip to rear)
-arm_thickness = 0.15; // the thickness of each V arm
-jet_interval = 0.01; // interval between jet and rear edge
+// V-shape geometry: 70 degree half-angle, tip pointing upstream
+v_angle = 70 * Pi / 180; // Half angle in radians (70 degrees, total 140 degrees)
 
-// V-shape geometry: 60 degree opening angle, tip pointing upstream
-v_angle = 70 * Pi / 180; // Half angle in radians (30 degrees, total 60 degrees)
+// Scaling factor: scale the geometry so that y-direction total length = 1
+// Original y-direction length is 2*tan(70°)*r_length, now we want it to be 1
+scale_factor = 1.0 / (2.0 * Tan(v_angle));
+
+// V-shape dimensions (scaled)
+r_height = height_cylinder; // V-shape characteristic height
+r_length = ar * height_cylinder * scale_factor; // V-shape length (from tip to rear), scaled
+arm_thickness = 0.064; // the thickness of each V arm, scaled
+jet_interval = 0.01; // interval between jet and rear edge, scaled
 
 // Define key x coordinates
 x_tip = -r_length/2;  // Front tip (most upstream point)
 x_rear = r_length/2;  // Rear edge (most downstream point)
 
-// Define V-shape outer points based on 60 degree opening
-y_rear_top_outer = (x_rear - x_tip) * Tan(v_angle);  // Top rear corner y-coordinate
-y_rear_bot_outer = -(x_rear - x_tip) * Tan(v_angle); // Bottom rear corner y-coordinate
+// Define V-shape outer points based on scaled dimensions
+y_rear_top_outer = (x_rear - x_tip) * Tan(v_angle);  // Top rear corner y-coordinate (= 0.5 after scaling)
+y_rear_bot_outer = -(x_rear - x_tip) * Tan(v_angle); // Bottom rear corner y-coordinate (= -0.5 after scaling)
 
 thickness_offset_x = arm_thickness * Sin(v_angle);
 thickness_offset_y = arm_thickness * Cos(v_angle);
@@ -147,11 +151,14 @@ If(jets_toggle)
 Else
 
    l = newl;
-   Line(l) = {p, p+4};  // Top slanted edge (tip to top rear)
-   Line(l+1) = {p+4, p+8};  // Rear vertical edge
-   Line(l+2) = {p+8, p};  // Bottom slanted edge (bottom rear to tip)
+   Line(l) = {p, p+1};  // Top slanted edge (tip to top rear)
+   Line(l+1) = {p+1, p+2};  // Rear vertical edge
+   Line(l+2) = {p+2, p+6};  // Bottom slanted edge (bottom rear to tip)
+   Line(l+3) = {p+6, p+10};  // Closing edge (tip to tip)
+   Line(l+4) = {p+10, p+11};
+   Line(l+5) = {p+11, p};  // Closing edge (tip to tip)
 
-   cylinder[] = {l, l+1, l+2};	// List of curves (surfaces) of the V-shape. Defined CCW
+   cylinder[] = {l, l+1, l+2, l+3, l+4, l+5};	// List of curves (surfaces) of the V-shape. Defined CCW
    Physical Line(4) = {cylinder[]}; // Define no-slip V-shape physical surfaces (in this case all)
 EndIf
 
